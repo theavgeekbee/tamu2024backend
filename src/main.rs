@@ -117,10 +117,10 @@ impl<'a> FromData<'a> for Transaction {
     async fn from_data(req: &'a Request<'_>, data: Data<'a>) -> Outcome<'a, Self> {
         //read header
         let header = req.headers();
-        if !header.contains("X-Bearer") {
+        if !header.contains("x-bearer") {
             return Outcome::Error((Status::Unauthorized, ()));
         }
-        let key = header.get_one("X-Bearer").unwrap().to_string();
+        let key = header.get_one("x-bearer").unwrap().to_string();
         if !key_valid(&key) {
             return Outcome::Error((Status::Unauthorized, ()));
         }
@@ -145,7 +145,7 @@ impl Display for Transaction {
         write!(f, "{}", formatted)
     }
 }
-#[post("/key", data = "<key>")]
+#[get("/key", data = "<key>")]
 fn key(key: KeyTransaction) -> String {
     let mut rng = thread_rng();
     let mut val = String::from("bearer_");
