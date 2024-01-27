@@ -1,12 +1,13 @@
 #[macro_use] extern crate rocket;
 
+use std::error::Error;
 use std::fmt::Display;
 use std::rc::Rc;
 use rand::prelude::*;
 use rocket::data::{FromData, Outcome, ToByteUnit};
 use rocket::{Data, Request};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use rocket::http::Status;
 use rocket::response::status;
 
@@ -31,7 +32,10 @@ struct KeyTransaction {
     for_user: String,
     expires: u64
 }
-
+struct SignUp {
+    username: String,
+    password: String
+}
 static mut KEYS: Vec<Key> = Vec::new();
 static mut USERS: Vec<User> = Vec::new();
 
@@ -139,6 +143,26 @@ impl<'a> FromData<'a> for Transaction {
         })
     }
 }
+#[async_trait]
+impl<'a> FromData<'a> for SignUp {
+    type Error = ();
+
+    async fn from_data(_req: &'a Request<'_>, data: Data<'a>) -> Outcome<'a, Self> {
+        //read data from request
+        let inner = data.open(2048.mebibytes()).into_string().await.unwrap().into_inner();
+        let result = inner.trim();
+        let mut split = result.split(';');
+        let username = split.next().unwrap().to_string();
+        let password = split.next().unwrap().to_string();
+        if search_for_user(username.clone()) {
+            return Outcome::Error((Status::Unauthorized, ()));
+        }
+        Outcome::Success(SignUp {
+            username,
+            password
+        })
+    }
+}
 impl Display for Transaction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let formatted = format!("{}:{}:{}", self.time, self.name, self.amount);
@@ -213,9 +237,21 @@ fn get_transactions(bearer: String) -> status::Custom<String> {
 }
 #[get("/")]
 fn index() -> &'static str {
-    "What are you looking for there, buddy?"
+    "What are you looking for here, buddy?"
 }
-
+#[post("/create", data="<form>")]
+fn sign_up(form: SignUp) -> Result<String, status::Custom<String>> {
+    let mut file = File::open("users").unwrap();
+    file.write(format!("{};{};\n", form.username, form.password).as_bytes()).map_err(|e| status::Custom(Status::InternalServerError, e.description().to_string()))?;
+    unsafe {
+        USERS.push(User {
+            username: form.username.clone(),
+            password_hash: form.password.clone(),
+            transaction: Vec::new()
+        });
+    }
+    Ok(String::from("Success"))
+}
 #[launch]
 fn rocket() -> _ {
     let mut file = File::open("users").unwrap();
@@ -234,5 +270,5 @@ fn rocket() -> _ {
         }
     }
     println!("Parsed {} users", unsafe { USERS.len() });
-    rocket::build().mount("/", routes![index, key, transact, balance, get_transactions])
+    rocket::build().mount("/", routes![index, key, transact, balance, get_transactions, sign_up])
 }
