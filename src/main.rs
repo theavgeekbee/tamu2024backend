@@ -1,4 +1,6 @@
 #[macro_use] extern crate rocket;
+
+use std::fmt::Display;
 use std::rc::Rc;
 use rand::prelude::*;
 use rocket::data::{FromData, Outcome, ToByteUnit};
@@ -16,11 +18,14 @@ struct Key {
 
 struct Transaction {
     for_user: String,
+    name: String,
+    time: u64,
     amount: f64
 }
 struct User {
     username: String,
-    transaction: Vec<Rc<Transaction>>
+    transaction: Vec<Rc<Transaction>>,
+    password_hash: String
 }
 struct KeyTransaction {
     for_user: String,
@@ -62,11 +67,11 @@ fn key_valid(k: &String) -> bool {
     }
     false
 }
-fn get_key(k: String) -> Option<Rc<&'static Key>> {
+fn get_key(k: String) -> Option<&'static Key> {
     unsafe {
         for key in &KEYS {
             if key.val == k {
-                return Some(Rc::new(key));
+                return Some(*Rc::new(key));
             }
         }
     }
@@ -81,11 +86,23 @@ impl<'a> FromData<'a> for KeyTransaction {
         //read data from request
         let inner = data.open(2048.mebibytes()).into_string().await.unwrap().into_inner();
         let result = inner.trim();
-        let mut split = result.split(";");
+        let mut split = result.split(';');
         let for_user = split.next().unwrap().to_string();
+        let hash = split.next().unwrap().to_string();
         let expires = split.next().unwrap().parse::<u64>().unwrap();
         if !search_for_user(for_user.clone()) {
             return Outcome::Error((Status::Unauthorized, ()));
+        }
+        unsafe {
+            let mut valid = false;
+            for user in &USERS {
+                if user.username == for_user && user.password_hash == hash {
+                    valid = true;
+                }
+            }
+            if !valid {
+                return Outcome::Error((Status::Unauthorized, ()));
+            }
         }
         Outcome::Success(KeyTransaction {
             for_user,
@@ -110,12 +127,22 @@ impl<'a> FromData<'a> for Transaction {
         let user = get_key(key).unwrap().for_user_uuid.clone();
         //read data from request
         let inner = data.open(2048.mebibytes()).into_string().await.unwrap().into_inner();
-        let result = inner.trim();
+        let mut split = inner.split(';');
+        let name = split.next().unwrap().to_string();
+        let result = split.next().unwrap().to_string();
 
         Outcome::Success(Transaction {
             for_user: user,
+            name,
+            time: get_unix(),
             amount: result.parse().unwrap_or(0.0)
         })
+    }
+}
+impl Display for Transaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let formatted = format!("{}:{}:{}", self.time, self.name, self.amount);
+        write!(f, "{}", formatted)
     }
 }
 #[post("/key", data = "<key>")]
@@ -165,6 +192,25 @@ fn balance(bearer: String) -> status::Custom<String> {
     }
     status::Custom(Status::Ok, total.to_string())
 }
+#[get("/transactions/<bearer>")]
+fn get_transactions(bearer: String) -> status::Custom<String> {
+    if !key_valid(&bearer) {
+        return status::Custom(Status::Unauthorized, String::from("Unauthorized"));
+    }
+    let u = get_key(bearer).unwrap().for_user_uuid.clone();
+    let mut transactions = String::new();
+    unsafe {
+        for user in &USERS {
+            if user.username == u {
+                for transaction in &user.transaction {
+                    transactions.push_str(&transaction.to_string());
+                    transactions.push('\n');
+                }
+            }
+        }
+    }
+    status::Custom(Status::Ok, transactions)
+}
 #[get("/")]
 fn index() -> &'static str {
     "What are you looking for there, buddy?"
@@ -175,15 +221,18 @@ fn rocket() -> _ {
     let mut file = File::open("users").unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
-    let split = contents.split("\n");
+    let split = contents.split('\n');
     for line in split {
+        let line = line.trim();
+        let mut split = line.split(';');
         unsafe {
             USERS.push(User {
-                username: line.parse().unwrap(),
+                username: split.next().unwrap().parse().unwrap(),
+                password_hash: split.next().unwrap().parse().unwrap(),
                 transaction: Vec::new()
             });
         }
     }
     println!("Parsed {} users", unsafe { USERS.len() });
-    rocket::build().mount("/", routes![index, key, transact, balance])
+    rocket::build().mount("/", routes![index, key, transact, balance, get_transactions])
 }
