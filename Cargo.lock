@@ -1269,6 +1269,7 @@ dependencies = [
 name = "tamuhack2024"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "rand",
  "rocket",
 ]
