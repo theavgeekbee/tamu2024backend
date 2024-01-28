@@ -85,32 +85,54 @@ fn get_key(k: String) -> Option<&'static Key> {
 impl<'a> FromData<'a> for KeyTransaction {
     type Error = ();
 
-    async fn from_data(_req: &'a Request<'_>, data: Data<'a>) -> Outcome<'a, Self> {
-        //read data from request
-        let inner = data.open(2048.mebibytes()).into_string().await.unwrap().into_inner();
-        let result = inner.trim();
-        let mut split = result.split(';');
-        let for_user = split.next().unwrap().to_string();
-        let hash = split.next().unwrap().to_string();
-        let expires = split.next().unwrap().parse::<u64>().unwrap();
-        if !search_for_user(for_user.clone()) {
-            return Outcome::Error((Status::Unauthorized, ()));
+    async fn from_data(req: &'a Request<'_>, data: Data<'a>) -> Outcome<'a, Self> {
+        //get headers
+        let header = req.headers();
+        if !header.contains("x-username") || !header.contains("x-password") {
+            return Outcome::Error((Status::BadRequest, ()));
         }
-        unsafe {
-            let mut valid = false;
-            for user in &USERS {
-                if user.username == for_user && user.password_hash == hash {
-                    valid = true;
-                }
-            }
-            if !valid {
+        let username = header.get_one("x-username").unwrap().to_string();
+        let password = header.get_one("x-password").unwrap().to_string();
+
+        let one_day_from_now = get_unix() + 86400;
+        let key = key_valid(&username);
+        if !key {
+            //check if user exists
+            if !search_for_user(username.clone()) {
                 return Outcome::Error((Status::Unauthorized, ()));
             }
+            //check if password is correct
+            unsafe {
+                for user in &USERS {
+                    if user.username == username && user.password_hash != password {
+                        return Outcome::Error((Status::Unauthorized, ()));
+                    }
+                }
+            }
+            //create key
+            let mut rng = thread_rng();
+            let mut val = String::from("bearer_");
+            for _ in 0..32 {
+                val.push(rng.gen_range(0..9).to_string().chars().next().unwrap());
+            }
+            let val_clone = val.clone();
+            unsafe {
+                KEYS.push(Key {
+                    val: val_clone,
+                    expiry: one_day_from_now,
+                    for_user_uuid: username.clone()
+                });
+            }
+            Outcome::Success(KeyTransaction {
+                for_user: username,
+                expires: one_day_from_now
+            })
+        } else {
+            Outcome::Success(KeyTransaction {
+                for_user: username,
+                expires: one_day_from_now
+            })
         }
-        Outcome::Success(KeyTransaction {
-            for_user,
-            expires
-        })
     }
 }
 #[async_trait]
