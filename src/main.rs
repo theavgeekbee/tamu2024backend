@@ -1,11 +1,10 @@
 #[macro_use] extern crate rocket;
 
-use std::error::Error;
 use std::fmt::Display;
 use std::rc::Rc;
 use rand::prelude::*;
 use rocket::data::{FromData, Outcome, ToByteUnit};
-use rocket::{Data, Request};
+use rocket::{Data, Request, Response};
 use std::fs::File;
 use std::io::{Read, Write};
 use rocket::http::Status;
@@ -257,7 +256,7 @@ fn index() -> &'static str {
 #[post("/create", data="<form>")]
 fn sign_up(form: SignUp) -> Result<String, status::Custom<String>> {
     let mut file = File::open("users").unwrap();
-    file.write(format!("{};{};\n", form.username, form.password).as_bytes()).map_err(|e| status::Custom(Status::InternalServerError, e.description().to_string()))?;
+    file.write(format!("{};{};\n", form.username, form.password).as_bytes()).map_err(|e| status::Custom(Status::InternalServerError, e.kind().to_string()))?;
     unsafe {
         USERS.push(User {
             username: form.username.clone(),
@@ -268,7 +267,7 @@ fn sign_up(form: SignUp) -> Result<String, status::Custom<String>> {
     Ok(String::from("Success"))
 }
 #[launch]
-fn rocket() -> _ {
+async fn rocket() -> _ {
     let mut file = File::open("users").unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
@@ -285,5 +284,6 @@ fn rocket() -> _ {
         }
     }
     println!("Parsed {} users", unsafe { USERS.len() });
-    rocket::build().mount("/", routes![index, key, transact, balance, get_transactions, sign_up, delete_all])
+    rocket::build()
+        .mount("/", routes![index, key, transact, balance, get_transactions, sign_up, delete_all])
 }
