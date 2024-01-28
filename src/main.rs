@@ -61,11 +61,11 @@ fn key_valid(k: &String) -> bool {
     unsafe {
         for key in &KEYS {
             if key.val == *k {
-                if (key.expiry - get_unix()) > 0 {
-                    return true;
+                return if (key.expiry - get_unix()) > 0 {
+                    true
                 } else {
                     KEYS.retain(|x| x.val != *k);
-                    return false;
+                    false
                 }
             }
         }
