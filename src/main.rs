@@ -235,6 +235,21 @@ fn get_transactions(bearer: String) -> status::Custom<String> {
     }
     status::Custom(Status::Ok, transactions)
 }
+#[post("/dump/<bearer>")]
+fn delete_all(bearer: String) -> status::Custom<String> {
+    if !key_valid(&bearer) {
+        return status::Custom(Status::Unauthorized, String::from("Unauthorized"));
+    }
+    let u = get_key(bearer).unwrap().for_user_uuid.clone();
+    unsafe {
+        for user in &mut USERS {
+            if user.username == u {
+                user.transaction.clear();
+            }
+        }
+    }
+    status::Custom(Status::Ok, String::from("OK"))
+}
 #[get("/")]
 fn index() -> &'static str {
     "What are you looking for here, buddy?"
@@ -270,5 +285,5 @@ fn rocket() -> _ {
         }
     }
     println!("Parsed {} users", unsafe { USERS.len() });
-    rocket::build().mount("/", routes![index, key, transact, balance, get_transactions, sign_up])
+    rocket::build().mount("/", routes![index, key, transact, balance, get_transactions, sign_up, delete_all])
 }
