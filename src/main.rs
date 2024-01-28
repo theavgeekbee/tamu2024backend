@@ -4,11 +4,14 @@ use std::fmt::Display;
 use std::rc::Rc;
 use rand::prelude::*;
 use rocket::data::{FromData, Outcome, ToByteUnit};
-use rocket::{Data, Request, Response};
+use rocket::{Data, Request};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::status;
+use rocket::response::status::NotFound;
 
 struct Key {
     val: String,
@@ -61,7 +64,6 @@ fn key_valid(k: &String) -> bool {
                 if (key.expiry - get_unix()) > 0 {
                     return true;
                 } else {
-                    //remove the key
                     KEYS.retain(|x| x.val != *k);
                     return false;
                 }
@@ -85,7 +87,7 @@ fn get_key(k: String) -> Option<&'static Key> {
 impl<'a> FromData<'a> for KeyTransaction {
     type Error = ();
 
-    async fn from_data(req: &'a Request<'_>, data: Data<'a>) -> Outcome<'a, Self> {
+    async fn from_data(req: &'a Request<'_>, _data: Data<'a>) -> Outcome<'a, Self> {
         //get headers
         let header = req.headers();
         if !header.contains("x-username") || !header.contains("x-password") {
@@ -271,9 +273,10 @@ fn delete_all(bearer: String) -> status::Custom<String> {
     }
     status::Custom(Status::Ok, String::from("OK"))
 }
-#[get("/")]
-fn index() -> &'static str {
-    "What are you looking for here, buddy?"
+#[get("/<file..>")]
+async fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
+    let path = Path::new("static/").join(file);
+    NamedFile::open(&path).await.map_err(|e| NotFound(e.to_string()))
 }
 #[post("/create", data="<form>")]
 fn sign_up(form: SignUp) -> Result<String, status::Custom<String>> {
@@ -307,5 +310,5 @@ async fn rocket() -> _ {
     }
     println!("Parsed {} users", unsafe { USERS.len() });
     rocket::build()
-        .mount("/", routes![index, key, transact, balance, get_transactions, sign_up, delete_all])
+        .mount("/", routes![files, key, transact, balance, get_transactions, sign_up, delete_all])
 }

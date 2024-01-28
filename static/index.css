@@ -1,0 +1,28 @@
+html {
+    font-family: sans-serif;
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+}
+body {
+    font-size: x-large;
+}
+h1, h2, h3 {
+    font-weight: bolder;
+    text-align: center;
+}
+a {
+    color: #048ab2;
+    text-decoration: none;
+}
+a:hover {
+    color: #2e6da4;
+    text-decoration: underline;
+}
+a:active {
+    color: #2e6da4;
+    text-decoration: underline;
+}
+a:visited {
+    color: #048ab2;
+    text-decoration: none;
+}
