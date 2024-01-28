@@ -5,6 +5,7 @@ html {
 }
 body {
     font-size: x-large;
+    padding: 30px 30px;
 }
 h1, h2, h3 {
     font-weight: bolder;
